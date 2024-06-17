@@ -1,0 +1,253 @@
+import pyodbc
+import PySimpleGUI as sg
+import random
+
+#списки серверов, пользователей и паролей
+spisok_server = ['DESKTOP-TBOOTVE\SQLEXPRESS']
+database = 'pipapop'
+spisok_userov = ['zxc123', 'pipa2']
+spisok_paroley = ['zxc']
+
+#кнопки для окна выбора сервера
+server_selection_layout = [
+    [sg.Text('Введите имя сервера:'), sg.InputText(key='servername')],
+    [sg.Button('Войти'), sg.Button('Выход')]
+]
+
+#Jкно с выбором сервера
+server_selection_window = sg.Window('Выбор сервера', server_selection_layout)
+
+#логика для окна с выбором сервера
+while True:
+    server_event, server_values = server_selection_window.read()
+    if server_event == sg.WIN_CLOSED or server_event == 'Выход':
+        server_selection_window.close()
+        exit()
+    elif server_event == 'Войти':
+        server = server_values['servername']
+        if server in spisok_server:
+            sg.popup('Успешный вход')
+            break
+        else:
+            sg.popup('Нет такого сервера')
+
+#кнопки для выбора пользователя
+user_selection_layout = [
+    [sg.Text('Введите имя пользователя:'), sg.InputText(key='username')],
+    [sg.Text('Введите пароль:'), sg.InputText(password_char='*', key='user_password')],
+    [sg.Button('Войти'), sg.Button('Выход')]
+]
+
+#окно с выбором пользователя
+user_selection_window = sg.Window('Выбор пользователя', user_selection_layout)
+
+#логика для окна с выбором пользователя
+while True:
+    user_event, user_values = user_selection_window.read()
+    if user_event == sg.WIN_CLOSED or user_event == 'Выход':
+        user_selection_window.close()
+        exit()
+    elif user_event == 'Войти':
+        username = user_values['username']
+        password = user_values['user_password']
+        if username in spisok_userov and password in spisok_paroley:
+            sg.popup('Успешный вход!')
+            user_selection_window.close()
+            break
+        else:
+            sg.popup('Неверное имя пользователя или пароль!')
+
+#строка подключения
+connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+
+#функция для получения списка таблиц из базы данных
+def get_tables():
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
+        tables = [row[0] for row in cursor.fetchall()]
+        return tables
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+        return []
+    finally:
+        if connection:
+            connection.close()
+
+#кнопки для окна выбора таблицы
+table_selection_layout = [
+    [sg.Text('Выберите таблицу:')],
+    [sg.Listbox(values=get_tables(), size=(30, 6), key='-TABLE-')],
+    [sg.Button('Выбрать'), sg.Button('Выход')]
+]
+
+#окно с выбором таблицы
+table_selection_window = sg.Window('Выбор таблицы', table_selection_layout)
+
+#логика для окна выбора таблицы
+while True:
+    table_event, table_values = table_selection_window.read()
+    if table_event == sg.WIN_CLOSED or table_event == 'Выход':
+        table_selection_window.close()
+        exit()
+    elif table_event == 'Выбрать':
+        selected_table = table_values['-TABLE-'][0]
+        sg.popup(f'Вы выбрали таблицу: {selected_table}')
+        table_selection_window.close()
+        break
+
+#кнопки для основной страницы
+main_layout = [
+    [sg.Button('Добавить значения')],
+    [sg.Button('Показать таблицу')],
+    [sg.Button('Удалить строку')],
+    [sg.Button('Изменить данные')],
+    [sg.Button('Выход')]
+]
+
+#ксновное окно
+main_window = sg.Window('Главное окно', main_layout)
+
+#функция для получения столбцов таблицы
+def get_table_columns(table_name):
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}'")
+        columns = [row[0] for row in cursor.fetchall()]
+        return columns
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+        return []
+    finally:
+        if connection:
+            connection.close()
+
+#функция add
+def add_values_to_db(values):
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        columns = get_table_columns(selected_table)
+        kolvo_columns = ', '.join(['?' for _ in columns])
+        query = f"INSERT INTO {selected_table} ({', '.join(columns)}) VALUES ({kolvo_columns})"
+        cursor.execute(query, values)
+        connection.commit()
+        sg.popup('Значения успешно добавлены в базу данных!')
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+    finally:
+        if connection:
+            connection.close()
+
+#функция read
+def display_table():
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT * FROM {selected_table}")
+        rows = cursor.fetchall()
+        #макет таблицы
+        table_layout = [
+            [sg.Table(values=[list(row) for row in rows], headings=[desc[0] for desc in cursor.description], auto_size_columns=True)],
+            [sg.Button('Назад')]
+        ]
+        table_window = sg.Window('Таблица', table_layout)
+        while True:
+            table_event, table_values = table_window.read()
+            if table_event == sg.WIN_CLOSED or table_event == 'Назад':
+                break
+        table_window.close()
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+    finally:
+        if connection:
+            connection.close()
+
+#функция delete
+def delete_row_by_column1_value(column1_value):
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        cursor.execute(f"DELETE FROM {selected_table} WHERE id_table_1 = ?", column1_value)
+        connection.commit()
+        sg.popup('Строка успешно удалена из базы данных!')
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+    finally:
+        if connection:
+            connection.close()
+
+#функция update
+def update_row_in_db(column1_value, new_column2_value):
+    try:
+        connection = pyodbc.connect(connection_string)
+        cursor = connection.cursor()
+        cursor.execute(f"UPDATE {selected_table} SET name_table_1 = ? WHERE id_table_1 = ?", (new_column2_value, column1_value))
+        connection.commit()
+        sg.popup('Данные успешно обновлены в базе данных!')
+    except Exception as e:
+        sg.popup(f'Ошибка подключения: {e}')
+    finally:
+        if connection:
+            connection.close()
+
+#логика для основного окна
+while True:
+    main_event, main_values = main_window.read()
+    if main_event == sg.WIN_CLOSED or main_event == 'Выход':
+        break
+    elif main_event == 'Добавить значения':
+        columns = get_table_columns(selected_table)
+        #кнопки окна добавления
+        add_layout = [[sg.Text(f'Введите значение для столбца {col}:'), sg.InputText(key=f'COLUMN_{col}')] for col in columns]
+        add_layout.append([sg.Button('Отправить'), sg.Button('Назад')])
+        add_window = sg.Window('Добавление значений в MS SQL', add_layout)
+        #логика окна добавления
+        while True:
+            add_event, add_values = add_window.read()
+            if add_event == sg.WIN_CLOSED or add_event == 'Назад':
+                break
+            elif add_event == 'Отправить':
+                values = [add_values[f'COLUMN_{col}'] for col in columns]
+                add_values_to_db(values)
+        add_window.close()
+    elif main_event == 'Показать таблицу':
+        display_table()
+    elif main_event == 'Удалить строку':
+        #кнопки для окна удаления
+        delete_layout = [
+            [sg.Text('Введите значение для столбца 1, чтобы удалить строку:'), sg.InputText(key='column')],
+            [sg.Button('Удалить'), sg.Button('Назад')]
+        ]
+        delete_window = sg.Window('Удаление строки', delete_layout)
+        #логика окна удаления
+        while True:
+            delete_event, delete_values = delete_window.read()
+            if delete_event == sg.WIN_CLOSED or delete_event == 'Назад':
+                break
+            elif delete_event == 'Удалить':
+                column1_value = delete_values['column']
+                delete_row_by_column1_value(column1_value)
+        delete_window.close()
+    elif main_event == 'Изменить данные':
+        #кнопки для окна изменения
+        update_layout = [
+            [sg.Text('ID:'), sg.InputText(key='column')],
+            [sg.Text('Новое значение:'), sg.InputText(key='new_column')],
+            [sg.Button('Изменить'), sg.Button('Назад')]
+        ]
+        update_window = sg.Window('Изменение данных в MS SQL', update_layout)
+        #логика окна изменения
+        while True:
+            update_event, update_values = update_window.read()
+            if update_event == sg.WIN_CLOSED or update_event == 'Назад':
+                break
+            elif update_event == 'Изменить':
+                column1_value = update_values['column']
+                new_column2_value = update_values['new_column']
+                update_row_in_db(column1_value, new_column2_value)
+        update_window.close()
+
+main_window.close()
